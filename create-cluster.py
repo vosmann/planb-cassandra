@@ -18,6 +18,65 @@ import tempfile
 import os
 import sys
 
+
+def setup_instance_profiles(cluster_name: str, result: dict):
+    '''
+    Creates IAM role, policy and instance profile required for enabling
+    enhanced CloudWatch metrics in Taupage.
+
+    Fills in the following keys in result: 'role', 'policy' and 'profile'.
+    '''
+    generic_name = cluster_name
+    policy_name = '{}-enhanced-could-watch-metric'.format(cluster_name)
+
+    trust_policy = '''{
+    "Version": "2012-10-17",
+    "Statement": {
+        "Effect": "Allow",
+        "Principal": {"Service": "ec2.amazonaws.com"},
+        "Action": "sts:AssumeRole"
+    }
+}'''
+    cloudwatch_policy = '''{
+    "Version": "2012-10-17",
+    "Statement": {
+        "Effect": "Allow",
+        "Action": "cloudwatch:PutMetricData",
+        "Resource":"*"
+    }
+}'''
+
+    with Action('Creating IAM instance profile..') as act:
+        iam = boto3.client('iam')
+
+        resp = iam.create_role(RoleName=generic_name,
+                               AssumeRolePolicyDocument=trust_policy)
+        result['role'] = resp['Role']
+
+        resp = iam.create_policy(PolicyName=policy_name,
+                                 PolicyDocument=cloudwatch_policy)
+        policy = resp['Policy']
+        result['policy'] = policy
+        iam.attach_role_policy(RoleName=generic_name, PolicyArn=policy['Arn'])
+
+        resp = iam.create_instance_profile(InstanceProfileName=generic_name,
+                                              Path='/')
+        result['profile'] = resp['InstanceProfile']
+
+        iam.add_role_to_instance_profile(InstanceProfileName=generic_name,
+                                         RoleName=generic_name)
+
+        #
+        # sleep for 30s
+        #
+        # IAM stuff is global (not per-region) and eventually consistent: we
+        # may easily trigger an error in run_instances() if we are too fast.
+        #
+        for i in range(6):
+            time.sleep(5)
+            act.progress()
+
+
 def setup_security_groups(cluster_name: str, public_ips: dict, result: dict) -> dict:
     '''
     Allow traffic between regions
@@ -191,6 +250,7 @@ def cli(cluster_name: str, regions: list, cluster_size: int, instance_type: str,
     # Elastic IPs by region
     public_ips = collections.defaultdict(list)
     security_groups = {}
+    iam_data = {}
     try:
         allocate_public_ips(regions, cluster_size, public_ips)
 
@@ -206,6 +266,9 @@ def cli(cluster_name: str, regions: list, cluster_size: int, instance_type: str,
 
         # Set up Security Groups
         setup_security_groups(cluster_name, public_ips, security_groups)
+
+        # Set up IAM roles and instance profiles
+        setup_instance_profiles(cluster_name, iam_data)
 
         taupage_amis = find_taupage_amis(regions)
 
@@ -234,7 +297,8 @@ def cli(cluster_name: str, regions: list, cluster_size: int, instance_type: str,
                         'TRUSTSTORE': truststore_base64,
                         'ADMIN_PASSWORD': generate_password()
                         },
-                    'scalyr_account_key': scalyr_key
+                    'scalyr_account_key': scalyr_key,
+                    'enhanced_cloudwatch_metrics': True
                     }
             # TODO: add KMS-encrypted keystore/truststore
 
@@ -277,6 +341,9 @@ def cli(cluster_name: str, regions: list, cluster_size: int, instance_type: str,
                     block_devices.append(mapping)
 
                 resp = ec2.run_instances(ImageId=ami.id,
+                                         IamInstanceProfile={
+                                             'Arn': iam_data['profile']['Arn']
+                                         },
                                          MinCount=1,
                                          MaxCount=1,
                                          SecurityGroupIds=[security_group_id],
@@ -378,6 +445,29 @@ and optionally to allow access to Jolokia from your monitoring tool.
            admin_password=user_data['environment']['ADMIN_PASSWORD']))
 
     except:
+        # Clean up stuff...
+
+        iam = boto3.client('iam')
+        profile = iam_data.get('profile')
+        role = iam_data.get('role')
+        policy = iam_data.get('policy')
+
+        # delete profile first, otherwise role may not be deleted
+        if profile:
+            info('Cleaning up IAM profile: {}'.format(profile['InstanceProfileName']))
+            iam.remove_role_from_instance_profile(InstanceProfileName=profile['InstanceProfileName'],
+                                                  RoleName=role['RoleName'])
+            iam.delete_instance_profile(InstanceProfileName=profile['InstanceProfileName'])
+
+        if policy:
+            info('Cleaning up IAM policy: {}'.format(policy['PolicyName']))
+            iam.detach_role_policy(RoleName=role['RoleName'], PolicyArn=policy['Arn'])
+            iam.delete_policy(PolicyArn=policy['Arn'])
+
+        if role:
+            info('Cleaning up IAM role: {}'.format(role['RoleName']))
+            iam.delete_role(RoleName=role['RoleName'])
+
         for region, sg in security_groups.items():
             ec2 = boto3.client('ec2', region)
             info('Cleaning up security group: {}'.format(sg['GroupId']))
