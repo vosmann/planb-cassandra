@@ -5,13 +5,15 @@ MAINTAINER Zalando SE
 # SSL Storage Port, Jolokia Agent, CQL Native
 EXPOSE 7001 8778 9042
 
-ENV CASSIE_VERSION=2.1.13
+ENV CASSIE_VERSION=2.0.17
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN echo "deb http://debian.datastax.com/community stable main" | tee -a /etc/apt/sources.list.d/datastax.community.list
 RUN curl -sL https://debian.datastax.com/debian/repo_key | apt-key add -
 RUN apt-get -y update && apt-get -y -o Dpkg::Options::='--force-confold' --fix-missing dist-upgrade
-RUN apt-get -y install cassandra=$CASSIE_VERSION cassandra-tools=$CASSIE_VERSION sysstat && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# cassandra-tools=$CASSIE_VERSION
+RUN apt-get -y install cassandra=$CASSIE_VERSION sysstat && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN mkdir -p /opt/jolokia/
 
