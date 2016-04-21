@@ -238,6 +238,7 @@ def cli(cluster_name: str, regions: list, cluster_size: int, instance_type: str,
                     },
                     'mounts': {
                         '/var/lib/cassandra': {
+                            'erase_on_boot': True,
                             'partition': '/dev/xvdf',
                             'options': 'noatime,nodiratime'
                         }
