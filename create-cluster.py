@@ -218,10 +218,10 @@ def cli(cluster_name: str, regions: list, cluster_size: int, instance_type: str,
             '''
             keystore_base64 = base64.b64encode(keystore)
             truststore_base64 = base64.b64encode(truststore)
-            version = get_latest_docker_image_version()
+            # version = get_latest_docker_image_version()
             all_seeds = [ip['PublicIp'] for region, ips in seed_nodes.items() for ip in ips]
             data = {'runtime': 'Docker',
-                    'source': 'registry.opensource.zalan.do/stups/planb-cassandra:{}'.format(version),
+                    'source': 'registry.opensource.zalan.do/reco/planb-cassandra:2.0.17-no-cass-tools',
                     'application_id': cluster_name,
                     'application_version': '1.0',
                     'networking': 'host',
