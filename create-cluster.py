@@ -219,9 +219,11 @@ def cli(cluster_name: str, regions: list, cluster_size: int, instance_type: str,
             keystore_base64 = base64.b64encode(keystore)
             truststore_base64 = base64.b64encode(truststore)
             # version = get_latest_docker_image_version()
+            # registry.opensource.zalan.do/reco/planb-cassandra:2.0.17-no-cass-tools-jamm-0-2-5
+            # registry.opensource.zalan.do/reco/planb-cassandra:2.0.17-no-cass-tools
             all_seeds = [ip['PublicIp'] for region, ips in seed_nodes.items() for ip in ips]
             data = {'runtime': 'Docker',
-                    'source': 'registry.opensource.zalan.do/reco/planb-cassandra:2.0.17-no-cass-tools',
+                    'source': 'registry.opensource.zalan.do/reco/planb-cassandra:2.0.17-no-cass-tools-jamm-0-2-5',
                     'application_id': cluster_name,
                     'application_version': '1.0',
                     'networking': 'host',
@@ -250,6 +252,7 @@ def cli(cluster_name: str, regions: list, cluster_size: int, instance_type: str,
             return data
 
         user_data = generate_taupage_user_data()
+        print(user_data)
         taupage_user_data = '#taupage-ami-config\n{}'.format(yaml.safe_dump(user_data))
 
         # Launch EC2 instances with correct user data
@@ -367,8 +370,8 @@ def cli(cluster_name: str, regions: list, cluster_size: int, instance_type: str,
                                 node_type='SEED')
                 seeds_launched += 1
                 if seeds_launched < total_seed_count:
-                    info("Sleeping for a minute before launching next SEED node..")
-                    time.sleep(60)
+                    info("Sleeping for half a minute before launching next SEED node..")
+                    time.sleep(30)
 
         # TODO: make sure all seed nodes are up
 
@@ -379,8 +382,8 @@ def cli(cluster_name: str, regions: list, cluster_size: int, instance_type: str,
             for i, ip in enumerate(ips):
                 if i >= seed_count:
                     # avoid stating all nodes at the same time
-                    info("Sleeping for one minute before launching next node..")
-                    time.sleep(60)
+                    info("Sleeping for half a minute before launching next node..")
+                    time.sleep(30)
                     launch_instance(region, ip,
                                     ami=taupage_amis[region],
                                     subnet_id=region_subnets[i % len(region_subnets)],
